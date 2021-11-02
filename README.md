@@ -1,5 +1,6 @@
-# WebSerialChart
+# [WebSerialChart](https://infomorph-inc.github.io/WebSerialChart/index.html)
 Web Serial, Chart.js, Three.js sample
+
 ## Overview
 This software gets the USB Serial data and show the real-time chart on the web browser.
 This is a sample code for checking implimentation and the work of IMU via USB serial.
@@ -14,6 +15,9 @@ We use [Web Serial API](https://wicg.github.io/serial/) to get serial data on th
 We tested to measure IMU data output from [Atom Matrix](https://docs.m5stack.com/#/en/core/atom_matrix). The original source code is [here](https://github.com/m5stack/M5Atom/edit/master/examples/Basics/MPU6886/MPU6886.ino).
 
 The USB Serial format should be Euler(XYZ-order,"%f,%f,%f¥n") or Quaternion("%f,%f,%f,%f¥n").
+
+## Try to use
+[Check this page](https://infomorph-inc.github.io/WebSerialChart/index.html)
 
 ## License
 * Our software is licensed under GPLv2.
