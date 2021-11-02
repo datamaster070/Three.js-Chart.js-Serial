@@ -9,10 +9,10 @@ This is a sample code for checking implimentation and the work of IMU via USB se
 
 ## What is this
 We use [Web Serial API](https://wicg.github.io/serial/) to get serial data on the web, [Chart.js](https://www.chartjs.org/) and [chartjs-plugin-streaming](https://nagix.github.io/chartjs-plugin-streaming/) to show the chart.
-## Device to output serial data
+
+### USB Serial data format
 We tested to measure IMU data output from [Atom Matrix](https://docs.m5stack.com/#/en/core/atom_matrix). The original source code is [here](https://github.com/m5stack/M5Atom/edit/master/examples/Basics/MPU6886/MPU6886.ino).
 
-### Data format
 The USB Serial format should be Euler(XYZ-order,"%f,%f,%f¥n") or Quaternion("%f,%f,%f,%f¥n").
 
 ## License
