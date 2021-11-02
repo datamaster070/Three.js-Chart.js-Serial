@@ -1,0 +1,302 @@
+
+<!DOCTYPE HTML>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>WebSerialChart</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.3.2"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@1.27.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.0.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-streaming@2.0.0"></script>
+<script src="https://riversun.github.io/jsframe/jsframe.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/108/three.min.js"></script>
+<script src="./js/loaders/deprecated/LegacyGLTFLoader.js"></script>
+<script src="./js/controls/OrbitControls.js"></script>
+</head>
+<body>
+<div style="width:100%">
+    <input type='button' value='Open serial port' onclick="connectSerial()">
+    <input type='button' value='Pause chart' onclick="pauseChart()">
+    <canvas id="mychart"></canvas>
+    <canvas id="myCanvas"></canvas>
+    <div style="text-align:center;">USB Serial format should be Euler(XYZ-order,"%f,%f,%f¥n") or Quaternion("%f,%f,%f,%f¥n")</div>
+    <div style="text-align:center;"><small>WebSerialChart, Copyright (C) 2021 Infomorph, Inc.</small></div>
+</div>
+
+<script>
+var chart;
+var bContinueSerial = false;
+var chartPausing = false;
+var streamingOpts;
+var duration = 20000;
+var currentRoll = 0;
+var currentPitch = 0;
+var currentYaw= 0;
+var currentQuaternion = new THREE.Quaternion();
+var currentEuler = new THREE.Euler();
+
+var chartColors = {
+    red: 'rgb(255, 80, 50)',
+    green: 'rgb(50, 255, 50)',
+    blue: 'rgb(50, 80, 255)',
+};
+
+class LineBreakTransformer {
+    constructor() {
+      this.chunks = "";
+    }
+
+    transform(chunk, controller) {
+      this.chunks += chunk;
+      const lines = this.chunks.split("\n");
+      this.chunks = lines.pop();
+      lines.forEach((line) => controller.enqueue(line));
+    }
+
+    flush(controller) {
+      controller.enqueue(this.chunks);
+    }
+};
+
+window.addEventListener('load', async function() {
+    const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0)
+    const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0)
+
+    Chart.register(ChartStreaming);
+    var ctx = document.getElementById('mychart');
+    chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'X',
+                data: [],
+                borderColor: chartColors.red,
+                fill: false,
+                showLine: true,
+                lineTension: 0,
+                cubicInterpolationMode: 'monotone'
+            }, {
+                label: 'Y',
+                data: [],
+                borderColor: chartColors.green,
+                fill: false,
+                showLine: true,
+                lineTension: 0,
+                cubicInterpolationMode: 'monotone'
+            }, {
+                label: 'Z',
+                data: [],
+                borderColor: chartColors.blue,
+                fill: false,
+                showLine: true,
+                lineTension: 0,
+                cubicInterpolationMode: 'monotone'
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    type: 'realtime',
+                    realtime: {
+                        duration: duration,  // 過去durationミリ秒のデータを表示
+                        delay: 1500,      // delayミリ秒待って線を表示
+                        pause: false,     // チャートは一時停止していない
+                        ttl: undefined   // データはチャートから消えると自動的に削除
+                    }
+                },
+            }
+        },
+    });
+    chart.canvas.parentNode.style.height = "55vh"
+    chart.canvas.parentNode.style.width = "100vw"
+
+    // Three.js
+    const cgWidth = vw
+    const cgHeight = vh * 0.4 * 0.99
+    console.log("cgWidth:", cgWidth)
+    console.log("cgHeight:", cgHeight)
+
+    const scene = new THREE.Scene();
+
+    const camera = new THREE.PerspectiveCamera( 45, cgWidth / cgHeight, 0.1, 10000 );
+    camera.lookAt(new THREE.Vector3(0, 0, 0));
+    camera.position.set(0, -70, 0);
+    camera.up.set(0, 0, 1);
+
+    const renderer = new THREE.WebGLRenderer({
+        canvas: document.querySelector('#myCanvas')
+    });
+    renderer.setSize( cgWidth, cgHeight );
+    renderer.setPixelRatio(window.devicePixelRatio);
+      
+    const axes = new THREE.AxesHelper(50);
+    scene.add(axes);
+
+    const gltfLoader = new THREE.LegacyGLTFLoader();
+    const airplaneUrl = "cg/b789.glb"
+    // const airplaneUrl = "https://github.com/Flightradar24/fr24-3d-models/blob/master/models/b789.glb?raw=true"
+    var airplaneModel
+    gltfLoader.load(airplaneUrl, function(gltf){
+        airplaneModel = gltf.scene
+        scene.add(airplaneModel)
+    },undefined, function (error) {
+        console.error(error);
+    })
+
+    // モデルを回転（gltfの定義とカメラの向きに合わせる）
+    var airplaneModelMatrix = new THREE.Matrix4();
+    airplaneModelMatrix.makeRotationFromEuler(new THREE.Euler(Math.PI/2, -Math.PI/2, 0));
+
+    // ライトの設定
+    const directionalLight1 = new THREE.DirectionalLight( 0xffffff, 0.8 );
+    directionalLight1.position.set( 1, 1, 1 );
+    scene.add( directionalLight1 );
+
+    const ambientLight = new THREE.AmbientLight( 0xffffee, 0.5 );
+    scene.add( ambientLight );
+
+    // 背景色
+    scene.background = new THREE.Color( 0x90D7EC );
+
+    // コントロール
+    const controls = new THREE.OrbitControls( camera, renderer.domElement );
+
+    const animate = function () {
+        requestAnimationFrame( animate ); // アニメーション設定（グラフィックス更新のたびに呼ばれる）
+
+        var rotMtx = new THREE.Matrix4();
+        rotMtx.makeRotationFromEuler(new THREE.Euler(currentRoll, currentPitch, currentYaw));
+
+        var modelMtx = new THREE.Matrix4();
+        modelMtx.multiplyMatrices(rotMtx,airplaneModelMatrix);
+
+        var modelEuler = new THREE.Euler();
+        modelEuler.setFromRotationMatrix(modelMtx);
+
+        if( airplaneModel !== undefined){
+            airplaneModel.rotation.set(modelEuler.x, modelEuler.y, modelEuler.z);
+        }
+        controls.update();
+
+        renderer.render( scene, camera );
+    };
+
+    window.addEventListener('resize', function(){
+        const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0)
+        const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0)
+
+        const cgWidth = vw;
+        const cgHeight = vh * 0.4 * 0.99;
+        camera.aspect = cgWidth / cgHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize( cgWidth, cgHeight );
+    });
+
+    animate();
+})
+
+function showToast(str){
+    const jsFrame = new JSFrame();
+    jsFrame.showToast({
+        html: str, align: 'center', duration: 5000, width: 480, height: 300
+    });
+}
+
+async function connectSerial() {
+    try {
+        console.log("connectSerial()");
+        const port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 115200 });
+        bContinueSerial = true;
+        let timestamp = Date.now();
+
+        while (bContinueSerial) {
+            if(port.readable){
+                const textDecoder = new TextDecoderStream();
+                const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+                const reader = textDecoder.readable
+                .pipeThrough(new TransformStream(new LineBreakTransformer()))
+                .getReader();
+
+                try {
+                    while (bContinueSerial) {
+                        const { value, done } = await reader.read();
+                        if (done) {
+                            console.log("Canceled");
+                            break;
+                        }
+                        // console.log(value);
+
+                        let strs = value.split(',');
+                        if(strs.length == 3){
+                            // Euler(XYZ順, roll, pitch, yaw) [degree]として扱う
+                            let vals = [parseFloat(strs[0]),parseFloat(strs[1]),parseFloat(strs[2])];
+                            currentEuler.set(vals[0]*Math.PI/180.0,vals[1]*Math.PI/180.0,vals[2]*Math.PI/180.0,'XYZ')
+                            currentQuaternion.setFromEuler(currentEuler)
+                        }else if(strs.length == 4){
+                            // Quaternionとして扱う
+                            let vals = [parseFloat(strs[0]),parseFloat(strs[1]),parseFloat(strs[2]),parseFloat(strs[3])];
+                            currentQuaternion.set(vals[0],vals[1],vals[2],vals[3]);
+                        }else{
+                            continue;
+                        }
+                        currentEuler.setFromQuaternion(currentQuaternion)
+                        currentRoll  = currentEuler.x;
+                        currentPitch = currentEuler.y;
+                        currentYaw   = currentEuler.z;
+
+                        let now = Date.now();
+                        if(now - timestamp<100 || chartPausing){//[msec]以下なら読み飛ばす
+                            continue;
+                        }
+                        timestamp = now;
+
+                        chart.data.datasets[0].data.push({x:now, y:currentRoll});
+                        chart.data.datasets[1].data.push({x:now, y:currentPitch});
+                        chart.data.datasets[2].data.push({x:now, y:currentYaw});
+
+                        chart.update();
+                    }
+                } catch (error) {
+                    console.log("Error: Read");
+                    console.log(error);
+                    showToast("Error Read: "+error.toString())
+                } finally {
+                    reader.releaseLock();
+                    await readableStreamClosed;
+                }
+            }
+        }
+        await port.close();
+        console.log("port.close()");
+   } catch (error) {
+      console.log("Error: Open");
+      console.log(error);
+      showToast("Error Open: "+error.toString())
+    }
+}
+
+async function pauseChart() {
+    chartPausing = !chartPausing;
+    if(chartPausing){
+        var scale = chart.scales['x'];
+        streamingOpts = chart.options.plugins.streaming;
+        chart.options.scales.x.type = 'time';
+        chart.options.scales.x.time.min = scale.min;
+        chart.options.scales.x.time.max = scale.max;
+        chart.options.plugins.streaming = false;
+        chart.update(0);
+        scale.destroy();
+    }else{
+        chart.options.scales.x.type = 'realtime';
+        chart.options.plugins.streaming = streamingOpts;
+        chart.update(0);
+    }
+}
+
+</script>
+</body>
+</html>
+
