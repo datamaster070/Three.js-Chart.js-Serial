@@ -17,7 +17,7 @@ We tried to measure IMU data output from [Atom Matrix](https://docs.m5stack.com/
 The USB Serial format should be Euler(XYZ-order,"%f,%f,%f¥n") or Quaternion("%f,%f,%f,%f¥n").
 
 ## Try to use
-1. [Check this page](https://infomorph-inc.github.io/WebSerialChart/index.html)
+1. [Check this page](https://infomorph-inc.github.io/WebSerialChart/index.html) for checking live demo.
 2. Click the "Open Serial Port" button to open the serial port.
 3. Rotate the airplane by mouse if you want to change the view angle.
 4. Click the "Pause Chart" button to stop and resume the chart flow.
