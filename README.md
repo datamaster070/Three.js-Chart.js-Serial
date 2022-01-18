@@ -14,7 +14,7 @@ We use [Web Serial API](https://wicg.github.io/serial/) to get serial data on th
 ### USB Serial data format
 We tried to measure IMU data output from [Atom Matrix](https://docs.m5stack.com/#/en/core/atom_matrix). The original code is [here](https://github.com/m5stack/M5Atom/edit/master/examples/Basics/MPU6886/MPU6886.ino). Please change its serial output format as below.
 
-The USB Serial format should be Euler(XYZ-order,"%f,%f,%f¥n") or Quaternion("%f,%f,%f,%f¥n").
+The USB Serial format should be Euler(XYZ-order,"%f,%f,%f¥n") or Quaternion(x,y,z,w order, "%f,%f,%f,%f¥n").
 
 ## Try to use
 1. [Check this live demo page](https://infomorph-inc.github.io/WebSerialChart/index.html).
